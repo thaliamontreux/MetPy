@@ -4,6 +4,7 @@
 """Test the operation of MetPy's XArray accessors."""
 from collections import OrderedDict
 from unittest.mock import patch, PropertyMock
+import warnings
 
 import numpy as np
 import pyproj
@@ -1508,3 +1509,25 @@ def test_add_vertical_dim_from_xarray():
         return vertical_dim
     test_da = xr.DataArray(np.zeros((2, 2, 2, 2)), dims=('time', 'isobaric', 'y', 'x'))
     assert return_vertical_dim(test_da) == 1
+
+
+def test_add_vertical_dim_from_xarray_2d_no_warning():
+    """Test 2D data without a vertical axis doesn't warn needlessly (#2370)."""
+    @add_vertical_dim_from_xarray
+    def return_vertical_dim(data, vertical_dim=None):
+        return vertical_dim
+    test_da = xr.DataArray(np.zeros((4, 3)), dims=('y', 'x'))
+    with warnings.catch_warnings(record=True) as record:
+        warnings.simplefilter('always')
+        assert return_vertical_dim(test_da) is None
+    assert not [r for r in record if 'Vertical dimension' in str(r.message)]
+
+
+def test_add_vertical_dim_from_xarray_3d_warns():
+    """Test missing vertical axis on >2D data still warns."""
+    @add_vertical_dim_from_xarray
+    def return_vertical_dim(data, vertical_dim=None):
+        return vertical_dim
+    test_da = xr.DataArray(np.zeros((4, 3, 2)), dims=('a', 'b', 'c'))
+    with pytest.warns(UserWarning, match='Vertical dimension number not found'):
+        assert return_vertical_dim(test_da) is None

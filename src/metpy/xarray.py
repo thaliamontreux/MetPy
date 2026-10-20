@@ -1538,10 +1538,13 @@ def add_vertical_dim_from_xarray(func):
                 try:
                     bound_args.arguments['vertical_dim'] = a.metpy.find_axis_number('vertical')
                 except AttributeError:
-                    # If axis number not found, fall back to default but warn.
-                    _warnings.warn(
-                        'Vertical dimension number not found. Defaulting to initial dimension.'
-                    )
+                    # If axis number not found, fall back to default but warn. 2D data
+                    # cannot have a vertical axis to find, so don't warn there (#2370).
+                    if a.ndim > 2:
+                        _warnings.warn(
+                            'Vertical dimension number not found. Defaulting to initial '
+                            'dimension.'
+                        )
 
         return func(*bound_args.args, **bound_args.kwargs)
     return wrapper
