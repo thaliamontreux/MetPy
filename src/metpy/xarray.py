@@ -23,6 +23,7 @@ import logging
 import re
 
 import numpy as np
+import pint
 from pyproj import CRS, Proj
 import xarray as xr
 
@@ -218,8 +219,15 @@ class MetPyDataArrayAccessor:
         new_coord_var.attrs['units'] = str(units)
         return self._data_array.assign_coords(coords={coord: new_coord_var})
 
-    def quantify(self):
+    def quantify(self, *, ignore_invalid_units=False):
         """Return a new DataArray with the data converted to a `pint.Quantity`.
+
+        Parameters
+        ----------
+        ignore_invalid_units : bool, optional
+            If True, a `units` attribute that pint cannot parse is left in place and
+            the data are returned unquantified rather than raising an error
+            (default False)
 
         Notes
         -----
@@ -231,8 +239,18 @@ class MetPyDataArrayAccessor:
             not is_quantity(self._data_array.data)
             and np.issubdtype(self._data_array.data.dtype, np.number)
         ):
+            try:
+                unit_array = self.unit_array
+            except (UndefinedUnitError, pint.DefinitionSyntaxError, TypeError):
+                if not ignore_invalid_units:
+                    raise
+                _warnings.warn(
+                    f"Cannot parse units "
+                    f"{self._data_array.attrs.get('units')!r}; leaving "
+                    f"{self._data_array.name!r} unquantified.")
+                return self._data_array
             # Only quantify if not already quantified and is quantifiable
-            quantified_dataarray = self._data_array.copy(data=self.unit_array)
+            quantified_dataarray = self._data_array.copy(data=unit_array)
             if 'units' in quantified_dataarray.attrs:
                 del quantified_dataarray.attrs['units']
         else:
@@ -1089,8 +1107,14 @@ class MetPyDatasetAccessor:
             })
         )
 
-    def quantify(self):
+    def quantify(self, *, ignore_invalid_units=False):
         """Return new dataset with all numeric variables quantified and cached data loaded.
+
+        Parameters
+        ----------
+        ignore_invalid_units : bool, optional
+            If True, variables with a `units` attribute that pint cannot parse are left
+            unquantified (with a warning) rather than raising an error (default False)
 
         Notes
         -----
@@ -1098,9 +1122,9 @@ class MetPyDatasetAccessor:
         by this operation. Do not utilize on moderate- to large-sized remote datasets before
         subsetting!
         """
-        return self._dataset.map(lambda da: da.metpy.quantify()).assign_attrs(
-            self._dataset.attrs
-        )
+        return self._dataset.map(
+            lambda da: da.metpy.quantify(ignore_invalid_units=ignore_invalid_units)
+        ).assign_attrs(self._dataset.attrs)
 
     def dequantify(self):
         """Return new dataset with variables cast to magnitude and units on attribute."""
@@ -1149,8 +1173,12 @@ def check_axis(var, *axes):
                for criterion in ('standard_name', '_CoordinateAxisType', 'axis', 'positive')):
             return True
 
-        # Check for units, either by dimensionality or name
-        with contextlib.suppress(UndefinedUnitError):
+        # Check for units, either by dimensionality or name. Tolerate anything pint
+        # fails to parse (undefined units, bad syntax, or unparseable expressions like
+        # 'seconds since 2000-01-01' that raise TypeError) -- such units simply can't
+        # be used for axis identification.
+        with contextlib.suppress(UndefinedUnitError, pint.DefinitionSyntaxError,
+                                 TypeError):
             if (axis in coordinate_criteria['units'] and (
                     (
                         coordinate_criteria['units'][axis]['match'] == 'dimensionality'
