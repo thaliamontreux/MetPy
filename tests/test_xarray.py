@@ -13,7 +13,7 @@ import xarray as xr
 from metpy.plots.mapping import CFProjection
 from metpy.testing import (assert_almost_equal, assert_array_almost_equal, assert_array_equal,
                            get_test_data)
-from metpy.units import DimensionalityError, is_quantity, units
+from metpy.units import DimensionalityError, is_quantity, UndefinedUnitError, units
 from metpy.xarray import (add_vertical_dim_from_xarray, check_axis, check_matching_coordinates,
                           grid_deltas_from_dataarray, preprocess_and_wrap)
 
@@ -317,6 +317,28 @@ def test_missing_grid_mapping_var(caplog):
     for record in caplog.records:
         assert record.levelname == 'WARNING'
     assert 'Could not find' in caplog.text
+
+
+def test_check_axis_unparseable_units():
+    """Test axis identification tolerates units pint can't parse (#1917)."""
+    var = xr.DataArray(np.arange(3), name='time_bounds',
+                       attrs={'units': 'seconds since 2000-01-01 00:00:00'})
+    # Should not raise; just can't match on units
+    assert not check_axis(var, 'vertical')
+
+
+def test_quantify_ignore_invalid_units():
+    """Test quantify with opt-in tolerance for invalid units (#2195)."""
+    ds = xr.Dataset({'good': xr.DataArray(np.ones(3), dims='x', attrs={'units': 'K'}),
+                     'bad': xr.DataArray(np.ones(3), dims='x',
+                                         attrs={'units': 'not_a_unit'})})
+    with pytest.raises(UndefinedUnitError):
+        ds.metpy.quantify()
+    with pytest.warns(UserWarning, match='Cannot parse units'):
+        result = ds.metpy.quantify(ignore_invalid_units=True)
+    assert is_quantity(result['good'].data)
+    assert not is_quantity(result['bad'].data)
+    assert result['bad'].attrs['units'] == 'not_a_unit'
 
 
 def test_parsecf_crs():
