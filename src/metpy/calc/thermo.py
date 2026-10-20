@@ -18,8 +18,9 @@ from scipy.special import lambertw
 import xarray as xr
 
 from .exceptions import InvalidSoundingError
-from .tools import (_greater_or_close, _less_or_close, _remove_nans, find_bounding_indices,
-                    find_intersections, first_derivative, get_layer)
+from .tools import (_get_bound_pressure_height, _greater_or_close, _less_or_close,
+                    _remove_nans, find_bounding_indices, find_intersections,
+                    first_derivative, get_layer)
 from .. import _warnings, constants as mpconsts
 from ..cbook import broadcast_indices, validate_choice
 from ..interpolate.one_dimension import interpolate_1d
@@ -3459,7 +3460,8 @@ def mixed_layer_cape_cin(pressure, temperature, dewpoint, **kwargs):
     surface and LFC, CAPE is integrated between the LFC and EL (or top of sounding).
     Intersection points of the measured temperature profile and parcel profile are
     logarithmically interpolated. Kwargs for `mixed_parcel` can be provided, such as `depth`.
-    Default mixed-layer depth is 100 hPa.
+    Default mixed-layer depth is 100 hPa. `depth` may also be given in units of length
+    (e.g. meters), in which case the `height` profile must be provided as well.
 
     Parameters
     ----------
@@ -3518,13 +3520,27 @@ def mixed_layer_cape_cin(pressure, temperature, dewpoint, **kwargs):
     """
     depth = kwargs.get('depth', units.Quantity(100, 'hPa'))
     start_p = kwargs.get('parcel_start_pressure', pressure[0])
+
+    # Express the layer depth as a pressure thickness for masking below
+    if hasattr(depth, 'check') and depth.check('[length]'):
+        if kwargs.get('height') is None:
+            raise ValueError('Specifying depth in units of length requires the height '
+                             'profile to be given via the `height` keyword argument.')
+        _, start_height = _get_bound_pressure_height(pressure, start_p,
+                                                     height=kwargs['height'])
+        top_pressure, _ = _get_bound_pressure_height(pressure, start_height + depth,
+                                                     height=kwargs['height'])
+        pressure_depth = start_p - top_pressure
+    else:
+        pressure_depth = depth
+
     parcel_pressure, parcel_temp, parcel_dewpoint = mixed_parcel(pressure, temperature,
                                                                  dewpoint, **kwargs)
 
     # Remove values below top of mixed layer and add in the mixed layer values
-    pressure_prof = pressure[pressure < (start_p - depth)]
-    temp_prof = temperature[pressure < (start_p - depth)]
-    dew_prof = dewpoint[pressure < (start_p - depth)]
+    pressure_prof = pressure[pressure < (start_p - pressure_depth)]
+    temp_prof = temperature[pressure < (start_p - pressure_depth)]
+    dew_prof = dewpoint[pressure < (start_p - pressure_depth)]
     pressure_prof = concatenate([parcel_pressure, pressure_prof])
     temp_prof = concatenate([parcel_temp, temp_prof])
     dew_prof = concatenate([parcel_dewpoint, dew_prof])

@@ -23,6 +23,7 @@ from metpy.calc import (brunt_vaisala_frequency, brunt_vaisala_frequency_squared
                         moist_lapse, moist_static_energy, most_unstable_cape_cin,
                         most_unstable_parcel, parcel_profile, parcel_profile_with_lcl,
                         parcel_profile_with_lcl_as_dataset, potential_temperature,
+                        pressure_to_height_std,
                         psychrometric_vapor_pressure_wet, relative_humidity_from_dewpoint,
                         relative_humidity_from_mixing_ratio,
                         relative_humidity_from_specific_humidity,
@@ -1751,6 +1752,23 @@ def test_mixed_layer_cape_cin_bottom_pressure(multiple_intersections):
                                                        parcel_start_pressure=903 * units.hPa)
     assert_almost_equal(mlcape_middle, 1192.55 * units('joule / kilogram'), 2)
     assert_almost_equal(mlcin_middle, -47.43 * units('joule / kilogram'), 2)
+
+
+def test_mixed_layer_cape_cin_depth_meters(multiple_intersections):
+    """Test mixed layer cape/cin with depth given in height units (#1718)."""
+    pressure, temperature, dewpoint = multiple_intersections
+    height = pressure_to_height_std(pressure)
+    mlcape, mlcin = mixed_layer_cape_cin(pressure, temperature, dewpoint,
+                                         depth=800 * units.m, height=height)
+    assert mlcape.check('[energy] / [mass]')
+    assert mlcin.check('[energy] / [mass]')
+
+
+def test_mixed_layer_cape_cin_depth_meters_no_height(multiple_intersections):
+    """Test depth in height units without heights raises a useful error (#1718)."""
+    pressure, temperature, dewpoint = multiple_intersections
+    with pytest.raises(ValueError, match='requires the height'):
+        mixed_layer_cape_cin(pressure, temperature, dewpoint, depth=800 * units.m)
 
 
 def test_dcape():
