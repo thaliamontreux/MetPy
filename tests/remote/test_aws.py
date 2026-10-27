@@ -6,6 +6,8 @@ from datetime import datetime
 from pathlib import Path
 import tempfile
 
+import pytest
+
 from metpy.remote import GOESArchive, MLWPArchive, NEXRADLevel2Archive, NEXRADLevel3Archive
 from metpy.testing import needs_aws
 
@@ -57,6 +59,42 @@ def test_nexrad2_range():
                      'KFTG20241214_153754_V06', 'KFTG20241214_154653_V06',
                      'KFTG20241214_155552_V06', 'KFTG20241214_160451_V06',
                      'KFTG20241214_161349_V06', 'KFTG20241214_162248_V06']
+
+
+def test_goes_empty_hour_falls_back():
+    """Test get_product finds nearest object when the requested hour is empty."""
+    class Obj:
+        def __init__(self, key):
+            self.key = key
+
+    keys = {
+        'ABI-L1b-RadC/2025/009/22/OR_ABI-L1b-RadC':
+            [Obj('ABI-L1b-RadC/2025/009/22/OR_ABI-L1b-RadC-M6C02_G18_'
+                 's20250092259454_e20250092300111_c20250092300148.nc')],
+        'ABI-L1b-RadC/2025/009/23/OR_ABI-L1b-RadC': [],
+    }
+    arch = GOESArchive.__new__(GOESArchive)
+    arch.bucket_name = 'noaa-goes18'
+    arch.delimiter = '/'
+    arch.include_mdm = False
+    arch.objects = lambda prefix: iter(keys.get(prefix, []))
+    arch.common_prefixes = lambda prefix, delim=None: iter(['M6C02'])
+
+    prod = arch.get_product('ABI-L1b-RadC', datetime(2025, 1, 9, 23, 30), band=2)
+    assert 's20250092259454' in prod.path
+
+
+def test_goes_empty_all_hours_raises():
+    """Test get_product still errors when nothing is found in nearby hours."""
+    arch = GOESArchive.__new__(GOESArchive)
+    arch.bucket_name = 'noaa-goes18'
+    arch.delimiter = '/'
+    arch.include_mdm = False
+    arch.objects = lambda prefix: iter([])
+    arch.common_prefixes = lambda prefix, delim=None: iter(['M6C02'])
+
+    with pytest.raises(ValueError, match='No result found'):
+        arch.get_product('ABI-L1b-RadC', datetime(2025, 1, 9, 23, 30), band=2)
 
 
 @needs_aws

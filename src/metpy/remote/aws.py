@@ -557,9 +557,20 @@ class GOESArchive(S3DataStore):
 
         """
         dt = datetime.now(UTC) if dt is None else ensure_timezone(dt)
-        time_prefix = self._build_time_prefix(product, dt)
-        prod_prefix = self._subprod_prefix(time_prefix, mode, band)
-        return self._closest_result(self.objects(prod_prefix), dt)
+        # The desired hour's listing can be empty -- e.g. ingest lag leaves nothing
+        # near the top of the hour, or a data gap -- so walk outward until some
+        # objects are found rather than immediately failing.
+        objs = []
+        for offset in range(8):
+            hour_dts = [dt] if offset == 0 else [dt - timedelta(hours=offset),
+                                                 dt + timedelta(hours=offset)]
+            for hour_dt in hour_dts:
+                prod_prefix = self._subprod_prefix(
+                    self._build_time_prefix(product, hour_dt), mode, band)
+                objs.extend(self.objects(prod_prefix))
+            if objs:
+                break
+        return self._closest_result(objs, dt)
 
     def get_range(self, product, start, end, mode=None, band=None):
         """Yield products within a particular date/time range.
