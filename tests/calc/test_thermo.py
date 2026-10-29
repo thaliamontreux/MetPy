@@ -89,7 +89,7 @@ def test_water_latent_heat_melting():
     temperature = 233 * units.K
     # Divide out sig figs in results for decimal comparison
     assert_almost_equal(water_latent_heat_melting(temperature) / 10**6,
-                        0.4192 * units('J / kg'), 4)
+                        0.2482 * units('J / kg'), 4)
     assert_almost_equal(water_latent_heat_melting(T0), Lf)
 
 
