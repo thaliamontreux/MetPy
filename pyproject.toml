@@ -8,7 +8,7 @@ description = "Collection of tools for reading, visualizing and performing calcu
 readme = "README.md"
 dynamic = ["version"]
 maintainers = [{name = "MetPy Developers", email = "support-python@unidata.ucar.edu"}]
-license = {text = "BSD-3-Clause"}
+license = "BSD-3-Clause"
 keywords = ["meteorology", "weather"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
